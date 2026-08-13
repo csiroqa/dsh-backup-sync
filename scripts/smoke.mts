@@ -277,6 +277,14 @@ async function main(): Promise<void> {
   if (failed > 0) process.exitCode = 1
 }
 
+// 兜底：任何失败/挂起路径都强制退出（CI 三平台），避免遗留监听服务器阻塞进程。
+const TIMEOUT_MS = 120_000
+const timer = setTimeout(() => {
+  console.error(`FAIL  冒烟测试超时（>${TIMEOUT_MS / 1000}s），强制退出`)
+  process.exit(1)
+}, TIMEOUT_MS)
+timer.unref()
+
 main().catch((error) => {
   console.error(error)
   process.exitCode = 1

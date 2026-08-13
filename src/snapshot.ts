@@ -111,7 +111,7 @@ async function collectFiles(root: string, rel = '', warnings: string[] = []): Pr
     } else if (entry.isFile()) {
       try {
         const s = await stat(join(root, relPath))
-        files.push({ path: relPath, size: s.size, mtimeMs: s.mtimeMs })
+        files.push({ path: relPath, size: s.size, mtimeMs: Math.round(s.mtimeMs) })
       } catch (error) {
         warnings.push(`跳过 ${relPath}（文件在收集时消失）：${errorMessage(error)}`)
       }
@@ -186,7 +186,7 @@ export async function createSnapshot(
         rel: 'credentials',
         source: credentialsSrc,
         dest: join(dir, 'credentials', '.credentials.yaml'),
-        files: [{ path: 'credentials/.credentials.yaml', size: s.size, mtimeMs: s.mtimeMs }],
+        files: [{ path: 'credentials/.credentials.yaml', size: s.size, mtimeMs: Math.round(s.mtimeMs) }],
       })
     }
   }
@@ -196,7 +196,7 @@ export async function createSnapshot(
     const src = join(dshHome, rel)
     if (existsSync(src)) {
       const s = await stat(src)
-      configs.push({ path: rel, size: s.size, mtimeMs: s.mtimeMs })
+      configs.push({ path: rel, size: s.size, mtimeMs: Math.round(s.mtimeMs) })
     }
   }
   const profilesSrc = join(dshHome, 'profiles')
@@ -210,7 +210,7 @@ export async function createSnapshot(
       configs.push({
         path: `profiles/${profile.name}/cordis.patch.yml`,
         size: s.size,
-        mtimeMs: s.mtimeMs,
+        mtimeMs: Math.round(s.mtimeMs),
       })
     }
   }
@@ -228,7 +228,7 @@ export async function createSnapshot(
       await mkdir(dirname(dest), { recursive: true })
       try {
         await cp(join(dshHome, config.path), dest, { force: true, dereference: true })
-        files.push({ path: `configs/${config.path}`, size: config.size, mtimeMs: config.mtimeMs })
+        files.push({ path: `configs/${config.path}`, size: config.size, mtimeMs: Math.round(config.mtimeMs) })
       } catch (error) {
         warnings.push(`配置复制失败 ${config.path}：${errorMessage(error)}`)
       }

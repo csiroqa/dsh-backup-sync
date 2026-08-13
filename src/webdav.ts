@@ -155,7 +155,8 @@ export async function pushSnapshot(
     const local = safeJoin(snapshotLocalDir, file.path)
     const current = await stat(local).catch(() => undefined)
     if (current === undefined) throw new Error(`快照文件已不存在，请重新创建快照：${file.path}`)
-    if (current.size !== file.size || current.mtimeMs !== file.mtimeMs) {
+    // mtime 容差 2ms：meta 存取整毫秒，文件系统精度（NTFS 100ns / ext4 纳秒）与复制保留值可能有出入。
+    if (current.size !== file.size || Math.abs(current.mtimeMs - file.mtimeMs) > 2) {
       throw new Error(`快照文件已变化，请重新创建快照：${file.path}`)
     }
     const stream = Readable.toWeb(createReadStream(local)) as unknown as BodyInit
@@ -223,7 +224,7 @@ export async function pullSnapshot(
     }
     if (!force && localMeta !== undefined && existing?.isFile()) {
       const same = localMeta.files.find((f) => f.path === file.path)
-      if (same !== undefined && same.size === file.size && same.mtimeMs === file.mtimeMs) {
+      if (same !== undefined && same.size === file.size && Math.abs(same.mtimeMs - file.mtimeMs) < 2) {
         continue
       }
     }
