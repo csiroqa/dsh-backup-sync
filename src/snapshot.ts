@@ -95,10 +95,6 @@ export function serializeMeta(meta: SnapshotMeta): string {
   return `${JSON.stringify(meta, null, 2)}\n`
 }
 
-function prefixFiles(files: SnapshotFile[], prefix: string): SnapshotFile[] {
-  return files.map((file) => ({ ...file, path: `${prefix}/${file.path}` }))
-}
-
 async function collectFiles(root: string, rel = '', warnings: string[] = []): Promise<SnapshotFile[]> {
   const dir = join(root, rel)
   const entries = await readdir(dir, { withFileTypes: true })
@@ -167,72 +163,61 @@ export async function createSnapshot(
   }
 
   const warnings: string[] = []
-  const sections: Array<{ rel: string; source: string; dest: string; files: SnapshotFile[] }> = []
+  const sections: Array<{ rel: string; source: string; dest: string }> = []
   for (const rel of homeDataDirs(options.includeAttachments)) {
     const source = join(dshHome, rel)
     if (!existsSync(source)) continue
-    sections.push({
-      rel,
-      source,
-      dest: join(dir, rel),
-      files: prefixFiles(await collectFiles(source, '', warnings), rel),
-    })
+    sections.push({ rel, source, dest: join(dir, rel) })
   }
   if (options.includeCredentials) {
     const credentialsSrc = join(dshHome, '.credentials.yaml')
     if (existsSync(credentialsSrc)) {
-      const s = await stat(credentialsSrc)
       sections.push({
         rel: 'credentials',
         source: credentialsSrc,
         dest: join(dir, 'credentials', '.credentials.yaml'),
-        files: [{ path: 'credentials/.credentials.yaml', size: s.size, mtimeMs: Math.round(s.mtimeMs) }],
       })
     }
   }
 
-  const configs: SnapshotFile[] = []
+  const configs: string[] = []
   for (const rel of CONFIG_FILES) {
-    const src = join(dshHome, rel)
-    if (existsSync(src)) {
-      const s = await stat(src)
-      configs.push({ path: rel, size: s.size, mtimeMs: Math.round(s.mtimeMs) })
-    }
+    if (existsSync(join(dshHome, rel))) configs.push(rel)
   }
   const profilesSrc = join(dshHome, 'profiles')
   if (existsSync(profilesSrc)) {
     const profiles = await readdir(profilesSrc, { withFileTypes: true })
     for (const profile of profiles) {
       if (!profile.isDirectory() || profile.name === 'node_modules') continue
-      const patch = join(profilesSrc, profile.name, 'cordis.patch.yml')
-      if (!existsSync(patch)) continue
-      const s = await stat(patch)
-      configs.push({
-        path: `profiles/${profile.name}/cordis.patch.yml`,
-        size: s.size,
-        mtimeMs: Math.round(s.mtimeMs),
-      })
+      if (existsSync(join(profilesSrc, profile.name, 'cordis.patch.yml'))) {
+        configs.push(`profiles/${profile.name}/cordis.patch.yml`)
+      }
     }
   }
 
-  const files: SnapshotFile[] = []
   try {
     for (const section of sections) {
       throwIfAborted()
       await copyTree(section.source, section.dest, section.rel, warnings)
-      files.push(...section.files)
     }
-    for (const config of configs) {
+    for (const rel of configs) {
       throwIfAborted()
-      const dest = join(dir, 'configs', config.path)
+      const dest = join(dir, 'configs', rel)
       await mkdir(dirname(dest), { recursive: true })
       try {
-        await cp(join(dshHome, config.path), dest, { force: true, dereference: true })
-        files.push({ path: `configs/${config.path}`, size: config.size, mtimeMs: Math.round(config.mtimeMs) })
+        await cp(join(dshHome, rel), dest, { force: true, dereference: true })
       } catch (error) {
-        warnings.push(`配置复制失败 ${config.path}：${errorMessage(error)}`)
+        warnings.push(`配置复制失败 ${rel}：${errorMessage(error)}`)
       }
     }
+
+    // 清单取自快照副本（复制后的真实 size/mtime，取整到毫秒）：
+    // 副本与清单严格同源，push 校验与增量对比在三平台一致（fs.cp 的
+    // mtime 保留行为在 Windows/Linux 上并不一致）。
+    const files = (await collectFiles(dir, '', warnings)).map((file) => ({
+      ...file,
+      mtimeMs: Math.round(file.mtimeMs),
+    }))
 
     const meta: SnapshotMeta = {
       formatVersion: FORMAT_VERSION,
