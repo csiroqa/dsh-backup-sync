@@ -1,0 +1,49 @@
+{
+  "name": "@dsh-plugin/backup-sync",
+  "version": "0.1.0",
+  "description": "备份/恢复 + 跨机同步：本地快照、WebDAV 推送/拉取、自动备份与保留策略",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "smoke": "tsx scripts/smoke.mts"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "esbuild": "^0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "link:../../../deepseek-harness/vendor/cordis",
+    "@deepseek-ai/cordis-plugin-timer": "link:../../../deepseek-harness/vendor/timer",
+    "@deepseek-ai/dsh-client-runtime": "link:../../../deepseek-harness/packages/client/runtime",
+    "@deepseek-ai/dsh-commands": "link:../../../deepseek-harness/packages/interaction/commands",
+    "@deepseek-ai/dsh-credentials": "link:../../../deepseek-harness/packages/credentials/credentials",
+    "@deepseek-ai/dsh-home-paths": "link:../../../deepseek-harness/packages/util/home-paths"
+  }
+}

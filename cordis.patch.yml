@@ -1,0 +1,30 @@
+# 备份/恢复 + 跨机同步插件（@dsh-plugin/backup-sync）
+# host 半区提供 /backup 命令组与自动备份；browser 半区（dsh.client 声明在 package.json）预留 UI。
+#
+# 数据面：
+#   - 本地快照：<backupRoot>/snapshots/<name>/，含 sessions（会话日志）、storages（工作区注册表等）、
+#     configs（settings.yaml / cordis.patch.yml / profiles 用户层，restore --all 才还原）、可选 attachments。
+#   - 远端：WebDAV（Nextcloud / 坚果云 / 群晖 / S3 网关等），目录布局 <baseUrl>/dsh-backup/<name>/。
+#   - 凭据：remote.password 留空时，从 ctx.credentials 的 WEBDAV_PASSWORD 引用解析
+#     （dsh credentials 存储于 $DSH_HOME/.credentials.yaml，勿与备份同放）。
+
+- insert:
+    - id: backup-sync
+      name: '@dsh-plugin/backup-sync'
+      config:
+        # 本地快照根目录；空 = $DSH_HOME/backups
+        backupRoot: ''
+        # 是否把 $DSH_HOME/attachments 一并备份（体积大，默认关）
+        includeAttachments: false
+        # 是否把 $DSH_HOME/.credentials.yaml 一并备份（含明文密钥，默认关）
+        includeCredentials: false
+        # 自动备份间隔（分钟）；0 = 关闭
+        autoIntervalMinutes: 0
+        # 自动备份/手动备份后保留的最近快照数；0 = 从不清理
+        autoKeep: 10
+        remote:
+          # WebDAV 根地址，如 https://dav.example.com/remote.php/dav/files/user/dsh-backups
+          baseUrl: ''
+          # 留空则尝试凭据引用 WEBDAV_USERNAME / WEBDAV_PASSWORD
+          username: ''
+          password: ''
