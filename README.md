@@ -1,146 +1,148 @@
 # dsh-backup-sync
 
-DeepSeek Harness（`dsh`）备份/恢复 + 跨机同步插件：本地快照、WebDAV 远端推送/拉取、自动备份与保留策略。
+English | [中文](README.zh.md)
 
-## 验证状态
+Backup, restore and cross-machine sync for DeepSeek Harness (`dsh`): local snapshots, WebDAV push/pull, auto-backup with retention, and stale archive cleanup.
 
-| 能力 | 状态 | 验证方式 |
+## Verification status
+
+| Capability | Status | Verified by |
 |---|---|---|
-| 创建/列出/清理本地快照 | 已实测 | 真实 dsh 运行（快照落盘、内容核对）+ 冒烟测试 |
-| 自动备份与保留策略 | 已实测 | 真实 dsh 运行（按间隔自动落盘） |
-| WebDAV 推送/拉取/删除 | 已实现 | 协议级 mock 验证（增量跳过、meta 后置、远端/本地残留清理、mtime 恢复、force 全量、路径逃逸等） |
-| 恢复（默认与 `--all`） | 已实现 | 冒烟测试覆盖；**未在运行中的 dsh 实例上实测** |
-| 真实 WebDAV 服务器 | 未验证 | 未连接 Nextcloud/坚果云等真实服务器，协议细节（MKCOL/PROPFIND 差异）可能需按服务器微调 |
+| Create / list / prune local snapshots | Verified | Live dsh run (snapshots landed, contents checked) + smoke suite |
+| Auto-backup and retention | Verified | Live dsh run (snapshots landed on schedule) |
+| WebDAV push / pull / delete | Implemented | Protocol-level mock (incremental skip, meta.json last, residue cleanup, mtime restore, `--force` refresh, path escape, ...) |
+| Restore (default and `--all`) | Implemented | Smoke suite; **not yet exercised on a live dsh instance** |
+| Real WebDAV servers | Not verified | Not connected to Nextcloud/坚果云 etc.; server quirks (MKCOL/PROPFIND differences) may need adjustment |
 
-## 功能
+## Features
 
-- **本地快照**：一键把 `$DSH_HOME` 关键数据复制为时间点快照（`/backup`）
-  - 会话日志（`sessions/`，含压缩文件原样复制）
-  - 工作区注册数据（`storages/`，如 `workspace.json`）
-  - 配置层（`settings.yaml`、`cordis.patch.yml`、各 profile 用户层，仅 `restore --all` 还原）
-  - 可选附件（`attachments/`，体积大，默认关闭）
-- **跨机同步**：通过 WebDAV（Nextcloud / 坚果云 / 群晖 / S3 网关等）推送与拉取快照
-  - **增量传输**：push/pull 按清单对比（size + mtime），未变化的文件跳过；拉取后恢复文件 mtime，二次同步零下载
-  - push 的清单（`meta.json`）最后上传：中途失败不会被另一台机器当成完整快照
-  - 推送自动清理远端旧清单残留；拉取自动清理本地多余文件
-- **恢复**：默认只还原会话日志与工作区数据；`--all` 连配置一起还原（恢复前自动对现状建保险快照）
-- **自动备份**：按分钟间隔定时快照，并按保留策略自动清理旧快照
+- **Local snapshots**: copy the key parts of `$DSH_HOME` into a point-in-time snapshot (`/backup`)
+  - Session logs (`sessions/`, compressed files copied verbatim)
+  - Workspace registry data (`storages/`, e.g. `workspace.json`)
+  - Configuration layer (`settings.yaml`, `cordis.patch.yml`, per-profile user layers; restored only with `restore --all`)
+  - Optional attachments (`attachments/`, large, off by default)
+- **Cross-machine sync**: push and pull snapshots over WebDAV (Nextcloud / 坚果云 / Synology / S3 gateways, ...)
+  - **Incremental transfers**: push/pull compare the manifest (size + mtime) and skip unchanged files; file mtimes are restored after pull, so a second sync downloads nothing
+  - The manifest (`meta.json`) is uploaded **last**, so an interrupted push is never mistaken for a complete snapshot
+  - Push prunes remote leftovers of the old manifest; pull removes local leftovers
+- **Restore**: by default only session logs and workspace data are restored; `--all` also restores configuration (with an automatic pre-restore safety snapshot)
+- **Auto-backup**: scheduled snapshots at a minute interval, pruned by a retention policy
 
-## 快速上手
+## Quick start
 
 ```sh
-# 源码版：pnpm dsh web；npx 版：npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh web --port 0
+# source build: pnpm dsh web · npx build: npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh web --port 0
 pnpm dsh web
-# 对话中：
-/backup              # 创建第一个快照
-/backup list         # 查看快照（时间、主机、文件数、大小）
-/backup prune 5      # 只保留最近 5 个
+# in the conversation:
+/backup              # create the first snapshot
+/backup list         # list snapshots (time, host, file count, size)
+/backup prune 5      # keep only the 5 most recent
 ```
 
-配置 `autoIntervalMinutes: 30` 后每 30 分钟自动快照一次（快照存放于 `$DSH_HOME/backups/snapshots/`）。
+With `autoIntervalMinutes: 30` configured, a snapshot is taken every 30 minutes (stored under `$DSH_HOME/backups/snapshots/`).
 
-## 环境要求
+## Requirements
 
-- DeepSeek Harness 源码仓库（本插件通过 pnpm `link:` 依赖其 `@deepseek-ai/*` 包，未发布到 npm）
-- pnpm 11+、Node 22+（开发构建需 Node 24 以运行冒烟测试）
+- DeepSeek Harness source checkout (this plugin links its `@deepseek-ai/*` packages via pnpm `link:` and is not published to npm)
+- pnpm 11+, Node 22+ (Node 24 for the smoke suite)
 
-默认 `link:` 路径按"本插件位于 `<harness 上级目录>/dsh-plugin/plugins/backup-sync`"解析；移动目录后请调整 `package.json` 中的 `link:` 路径。
+The default `link:` paths assume the plugin lives at `<harness parent>/dsh-plugin/plugins/backup-sync`; adjust `package.json` after moving the directory.
 
-## 安装
+## Install
 
-### 通过源码仓库（开发环境）
+### Via the source checkout (development)
 
 ```sh
 pnpm install
 pnpm run build
 
-# 装进 profile（在 harness 仓库目录执行）
+# install into a profile (run in the harness checkout)
 pnpm dsh plugin --profile web add ../path/to/backup-sync
 pnpm dsh web
 ```
 
-### 通过 npx（已实测）
+### Via npx (verified)
 
 ```sh
-# 首次运行需联网下载 @deepseek-ai/dsh（npm 包形式，非源码仓库）
-npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh plugin --profile web add <本插件路径>
+# the first run downloads @deepseek-ai/dsh (npm package, not the source checkout)
+npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh plugin --profile web add <path-to-this-plugin>
 npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh web --port 0
 ```
 
-- 若本机 npm 配置了 npmmirror 等镜像，**必须显式 `--registry=https://registry.npmjs.org`**：镜像上 `@deepseek-ai/dsh` 数据滞后（可能解析到旧版本且缺依赖），且 npm 11 的 npx 锁校验会拒绝非官方 registry
-- npx 版与源码版共享 `$DSH_HOME` 与 profile；插件的 `link:` 依赖指向本地 harness 源码，需保持该路径存在且已 `pnpm run build`
+- If npm is configured with a mirror such as npmmirror, **explicitly pass `--registry=https://registry.npmjs.org`**: the mirror serves stale `@deepseek-ai/dsh` metadata (possibly an old version with missing deps), and npm 11's npx lock check rejects non-official registries
+- The npx build shares `$DSH_HOME` and profiles with the source build; the plugin's `link:` deps point at the local harness checkout, which must exist and be built (`pnpm run build`)
 
-## 命令
+## Commands
 
-| 命令 | 说明 |
+| Command | Description |
 |---|---|
-| `/backup [快照名]` | 创建本地快照（默认时间戳名） |
-| `/backup list` | 列出本地与远端快照 |
-| `/backup push <快照名>` | 推送本地快照到远端（增量：未变化文件跳过，并清理远端残留） |
-| `/backup pull <快照名> [--force]` | 从远端同步快照到本地（增量；`--force` 清空后全量重拉） |
-| `/backup restore <快照名> [--all]` | 从本地快照恢复；`--all` 连配置一起还原（需重启生效） |
-| `/backup prune [保留数]` | 清理旧本地快照（默认按配置 `autoKeep`） |
-| `/backup remote-prune <快照名>` | 删除远端快照 |
-| `/backup sweep-archives` | 清理失效的会话归档（见"恢复安全"） |
+| `/backup [name]` | Create a local snapshot (default: timestamp name) |
+| `/backup list` | List local and remote snapshots |
+| `/backup push <name>` | Push a local snapshot to the remote (incremental; prunes remote leftovers) |
+| `/backup pull <name> [--force]` | Sync a snapshot from the remote (incremental; `--force` clears and refetches) |
+| `/backup restore <name> [--all]` | Restore from a local snapshot; `--all` also restores configuration (restart required) |
+| `/backup prune [keep]` | Prune old local snapshots (default: `autoKeep`) |
+| `/backup remote-prune <name>` | Delete a remote snapshot |
+| `/backup sweep-archives` | Remove stale archived session entries (see "Restore safety") |
 
-## 配置（cordis.patch.yml）
+## Configuration (cordis.patch.yml)
 
 ```yaml
 - insert:
     - id: backup-sync
       name: '@dsh-plugin/backup-sync'
       config:
-        backupRoot: ''            # 本地快照目录；空 = $DSH_HOME/backups
-        includeAttachments: false # 是否备份附件（体积大）
-        includeCredentials: false # 是否备份 .credentials.yaml（含明文密钥，默认关）
-        autoIntervalMinutes: 0    # 自动备份间隔（分钟）；0 = 关闭
-        autoKeep: 10              # 保留最近快照数；0 = 从不清理
+        backupRoot: ''            # local snapshot root; empty = $DSH_HOME/backups
+        includeAttachments: false # back up attachments (large)
+        includeCredentials: false # back up .credentials.yaml (contains secrets; off by default)
+        autoIntervalMinutes: 0    # auto-backup interval in minutes; 0 = off
+        autoKeep: 10              # snapshots to keep; 0 = never prune
         remote:
-          baseUrl: ''             # WebDAV 根地址
+          baseUrl: ''             # WebDAV root URL
           username: ''
-          password: ''            # 建议勿写明文，见下
+          password: ''            # prefer credential refs, see below
 ```
 
-### WebDAV 凭据
+### WebDAV credentials
 
-`remote.password`（及可选 `username`）留空时，插件从凭据引用 `WEBDAV_PASSWORD` / `WEBDAV_USERNAME` 解析：
+When `remote.password` (and optionally `username`) are left empty, the plugin resolves them from the credential refs `WEBDAV_PASSWORD` / `WEBDAV_USERNAME`:
 
 ```sh
-# 在 harness 中配置（写入 $DSH_HOME/.credentials.yaml，权限 0600）
+# configured in harness (written to $DSH_HOME/.credentials.yaml, mode 0600)
 dsh credential set WEBDAV_USERNAME ...
 dsh credential set WEBDAV_PASSWORD ...
 ```
 
-> 不要把明文密码写进 `cordis.patch.yml`（该文件随配置入库）。`.credentials.yaml` 不会被默认备份。
+> Do not put plaintext passwords in `cordis.patch.yml` (it is part of the config repo). `.credentials.yaml` is not backed up by default.
 
-远端目录布局：`<baseUrl>/dsh-backup/<快照名>/…`。
+Remote layout: `<baseUrl>/dsh-backup/<snapshot-name>/…`.
 
-## 恢复安全
+## Restore safety
 
-- `restore` 前自动对现状建保险快照（`…-pre-restore`），可随时回退
-- 默认**不**覆盖运行中配置；`--all` 会还原 `settings.yaml` 与各 profile 的 `cordis.patch.yml`，其他插件配置将回退为快照时刻的状态，需重启生效
-- 建议在 dsh 空闲时执行恢复；会话日志正被占用时相关文件会跳过并在输出中警告
-- **失效归档**：dsh 的归档列表（侧栏"已归档"）只记录会话 id、不校验日志是否存在——恢复覆盖或删除会话日志后，归档条目不会自动消失（幽灵归档）。本插件在 `restore` 成功后自动清理，也可随时用 `/backup sweep-archives` 手动清理；旧版 dsh（不含 `workspace.unarchiveSession`）会提示不支持
+- `restore` automatically snapshots the current state first (`…-pre-restore`) so you can always roll back
+- By default, running configuration is **not** overwritten; `--all` restores `settings.yaml` and per-profile `cordis.patch.yml`, rolling other plugins' config back to the snapshot moment — restart required
+- Prefer running restore while dsh is idle; busy session logs are skipped with a warning
+- **Stale archives**: dsh's archive list (sidebar "Archived") stores session ids without validating that the logs still exist — after a restore overwrite or log deletion, entries linger (ghost archives). This plugin sweeps them automatically after `restore`, or on demand via `/backup sweep-archives`; older dsh builds without `workspace.unarchiveSession` report it as unsupported
 
-## 已知限制
+## Known limitations
 
-- **快照不是严格原子**：会话日志在复制期间可能正被追加（复制到的是某一时刻的一致前缀，尾记录可能缺失）
-- **恢复需在 dsh 空闲时执行**：会话日志正被占用时相关文件会跳过并在输出中警告（Windows 上尤为常见）；恢复前会自动留保险快照，可先 `restore` 到测试 profile 验证
-- **真实 WebDAV 兼容性**：协议行为已在 mock 服务器上验证；不同服务器（Nextcloud / 群晖 / 坚果云）对 MKCOL 已存在目录、PROPFIND 响应格式的处理可能不同，如遇异常请反馈（错误信息已人化：认证失败/路径不存在/空间不足等）
-- 不支持两个 dsh 实例共享同一 `$DSH_HOME`（自动清理会按各自视图互删）
-- Windows 上快照名避开保留名（`CON`、`AUX` 等）与尾点
+- **Snapshots are not strictly atomic**: a session log may be appended to while it is being copied (the copy is a consistent prefix at copy time; the tail may be missing)
+- **Restore needs idle dsh**: busy session logs are skipped with a warning (especially on Windows); the automatic pre-restore snapshot lets you validate on a test profile first
+- **Real WebDAV compatibility**: behavior is verified against a mock; different servers (Nextcloud / Synology / 坚果云) may handle MKCOL on existing directories and PROPFIND response formats differently — please report issues (errors are user-facing: auth failure / path missing / out of space, ...)
+- Running two dsh instances on the same `$DSH_HOME` is unsupported (each prunes by its own view)
+- On Windows, avoid reserved names (`CON`, `AUX`, ...) and trailing dots in snapshot names
 
-## 开发
+## Development
 
-构建工具链与 harness 内置插件（如 `@deepseek-ai/dsh-schedule`）对齐：**tsdown**（rolldown 驱动），配置见 `tsdown.config.ts`；依赖 external 遵循 tsdown 默认（按 `package.json` 的 `dependencies` 排除）。
+The build uses **tsdown** (rolldown-driven), see `tsdown.config.ts`: `fixedExtension: false`, `dts: false`, `clean: false`; dependency externalization follows tsdown defaults (excluded via `package.json` `dependencies`).
 
 ```sh
-pnpm run build      # tsdown 构建 lib/index.js（host ESM）+ lib/client.js（browser CJS 包装）
+pnpm run build      # tsdown builds lib/index.js (host ESM) + lib/client.js (browser CJS wrapper)
 pnpm run watch      # tsdown --watch
 pnpm run typecheck  # tsc --noEmit
-pnpm run smoke      # 核心逻辑冒烟测试（本地快照 + WebDAV mock，零外部服务）
+pnpm run smoke      # core smoke suite (local snapshots + WebDAV mock, no external services)
 ```
 
-## 许可证
+## License
 
 MIT

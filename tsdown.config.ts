@@ -6,9 +6,8 @@ import { defineConfig } from 'tsdown'
 const pkg = JSON.parse(readFileSync(join(import.meta.dirname, 'package.json'), 'utf8')) as { name: string }
 
 /**
- * 构建配置：工具链对齐 harness 内置插件（如 @deepseek-ai/dsh-schedule）：
- * `fixedExtension: false`、`dts: false`、`clean: false`，依赖 external 遵循
- * tsdown 默认（按 package.json 的 dependencies 排除）。
+ * 构建配置：`fixedExtension: false`、`dts: false`、`clean: false`，
+ * 依赖 external 遵循 tsdown 默认（按 package.json 的 dependencies 排除）。
  *   - lib/index.js   host 半区（Node ESM；@deepseek-ai/* 已在 dependencies，自动保持 external）
  *   - lib/client.js  browser 半区（CJS + window.__ModuleLoader__.load 包装；平台模块
  *                     不在 dependencies，需显式 external，其余全部内联）
