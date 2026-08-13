@@ -1,6 +1,6 @@
 {
   "name": "@dsh-external/dsh-backup-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DSH 备份/恢复与跨机同步插件：本地快照、WebDAV 增量推送/拉取、自动备份与失效归档清理",
   "private": true,
   "type": "module",
