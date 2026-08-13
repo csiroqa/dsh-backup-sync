@@ -29,11 +29,11 @@ import {
   createSnapshot, listSnapshots, getSnapshot, restoreSnapshot, pruneSnapshots,
   defaultSnapshotName, snapshotDir, errorMessage, totalBytes, assertSnapshotName,
   type SnapshotSummary,
-} from './snapshot.js'
+} from './snapshot.ts'
 import {
   pushSnapshot, pullSnapshot, listRemoteSnapshots, removeRemoteSnapshot,
   WebDavError, type WebDavConfig,
-} from './webdav.js'
+} from './webdav.ts'
 import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 
 export const name = 'backup-sync'

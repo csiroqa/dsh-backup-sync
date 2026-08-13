@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+
+  pull_request:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # 版本取自 package.json 的 packageManager（pnpm@11.7.0）
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      # 依赖以 link: 指向兄弟目录的 deepseek-harness 检出（与本地开发环境一致）。
+      - name: Checkout deepseek-harness (sibling)
+        run: git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness ../../../deepseek-harness
+
+      - name: Build harness libraries (host + client halves)
+        working-directory: ../../../deepseek-harness
+        run: |
+          pnpm install
+          pnpm run build:lib
+
+      - name: Install plugin dependencies
+        run: pnpm install
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Smoke test (snapshots + WebDAV mock)
+        run: pnpm smoke

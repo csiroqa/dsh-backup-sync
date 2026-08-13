@@ -1,4 +1,4 @@
-# 备份/恢复 + 跨机同步插件（@dsh-plugin/backup-sync）
+# 备份/恢复 + 跨机同步插件（@dsh-external/dsh-backup-sync）
 # host 半区提供 /backup 命令组与自动备份；browser 半区（dsh.client 声明在 package.json）预留 UI。
 #
 # 数据面：
@@ -10,7 +10,7 @@
 
 - insert:
     - id: backup-sync
-      name: '@dsh-plugin/backup-sync'
+      name: '@dsh-external/dsh-backup-sync'
       config:
         # 本地快照根目录；空 = $DSH_HOME/backups
         backupRoot: ''

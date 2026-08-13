@@ -11,10 +11,10 @@ import { join } from 'node:path'
 import { createServer, type Server } from 'node:http'
 import {
   createSnapshot, restoreSnapshot, listSnapshots, pruneSnapshots, snapshotDir, safeJoin,
-} from '../src/snapshot.js'
+} from '../src/snapshot.ts'
 import {
   pushSnapshot, pullSnapshot, listRemoteSnapshots, listRemoteFiles, removeRemoteSnapshot, peekRemoteSnapshot,
-} from '../src/webdav.js'
+} from '../src/webdav.ts'
 
 /** 测试夹具：DSH_HOME 下的会话日志相对路径（正斜杠，与快照内路径约定一致）与内容。 */
 const SESSION_REL = 'sessions/proj--a--/sess-1/session.jsonl.zstd'

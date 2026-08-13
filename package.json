@@ -1,7 +1,8 @@
 {
-  "name": "@dsh-plugin/backup-sync",
+  "name": "@dsh-external/dsh-backup-sync",
   "version": "0.1.0",
-  "description": "备份/恢复 + 跨机同步：本地快照、WebDAV 推送/拉取、自动备份与保留策略",
+  "description": "DSH 备份/恢复与跨机同步插件：本地快照、WebDAV 增量推送/拉取、自动备份与失效归档清理",
+  "private": true,
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -11,7 +12,9 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib",
+    "lib/index.js",
+    "lib/client.js",
+    "src",
     "cordis.patch.yml"
   ],
   "dsh": {
@@ -27,16 +30,36 @@
   },
   "scripts": {
     "build": "tsdown",
-    "watch": "tsdown --watch",
     "typecheck": "tsc --noEmit",
-    "smoke": "tsx scripts/smoke.mts"
+    "watch": "tsdown --watch",
+    "smoke": "node --experimental-strip-types scripts/smoke.mts"
   },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "backup",
+    "webdav",
+    "sync"
+  ],
+  "author": "csiroqa <justinwangyj@163.com>",
   "license": "MIT",
+  "homepage": "https://github.com/csiroqa/dsh-backup-sync",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/csiroqa/dsh-backup-sync.git"
+  },
+  "bugs": {
+    "url": "https://github.com/csiroqa/dsh-backup-sync/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "pnpm@11.7.0",
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "esbuild": "^0.28.0",
     "tsdown": "^0.22.14",
-    "tsx": "^4.19.0",
     "typescript": "^5.9.0"
   },
   "dependencies": {

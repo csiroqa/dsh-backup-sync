@@ -10,8 +10,8 @@ import { mkdir, writeFile, rm, lstat, stat, utimes, readFile, readdir } from 'no
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { Readable } from 'node:stream'
-import type { SnapshotMeta, SnapshotFile } from './snapshot.js'
-import { safeJoin, errorMessage, assertSnapshotName, SNAPSHOT_NAME } from './snapshot.js'
+import type { SnapshotMeta, SnapshotFile } from './snapshot.ts'
+import { safeJoin, errorMessage, assertSnapshotName, SNAPSHOT_NAME } from './snapshot.ts'
 export interface WebDavConfig {
   /** WebDAV 根地址，如 https://dav.example.com/remote.php/dav/files/user/dsh-backups。 */
   readonly baseUrl: string
@@ -20,9 +20,12 @@ export interface WebDavConfig {
 }
 
 export class WebDavError extends Error {
-  constructor(message: string, readonly status: number | undefined) {
+  readonly status: number | undefined
+
+  constructor(message: string, status: number | undefined) {
     super(message)
     this.name = 'WebDavError'
+    this.status = status
   }
 }
 
