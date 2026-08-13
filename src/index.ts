@@ -101,6 +101,9 @@ function summarizeLine(snapshot: SnapshotSummary): string {
   return `  ${snapshot.name}  ${stamp}`
 }
 
+/** 已知子命令；其余输入一律视为自定义快照名。 */
+const SUBCOMMANDS = new Set(['create', 'list', 'push', 'pull', 'restore', 'prune', 'remote-prune', 'sweep-archives'])
+
 function tokens(rawInput: string): string[] {
   return rawInput.trim().split(/\s+/).filter((token) => token.length > 0)
 }
@@ -191,6 +194,10 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (sub === '' || sub === 'create') {
         const name = args[1] ?? defaultSnapshotName()
         return { kind: 'success', text: await createBackup(name, signal) }
+      }
+      if (!SUBCOMMANDS.has(sub)) {
+        // 未匹配子命令的输入视为自定义快照名：/backup test → 创建快照 test。
+        return { kind: 'success', text: await createBackup(sub, signal) }
       }
 
       if (sub === 'list') {
@@ -306,7 +313,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         return { kind: 'success', text: `已删除远端快照：${name}` }
       }
 
-      return { kind: 'error', text: `未知子命令：${sub}\n用法：\n  /backup [name]           创建快照\n  /backup list             列出本地与远端快照\n  /backup push <快照名>    推送本地快照到远端\n  /backup pull <快照名> [--force]  从远端同步快照\n  /backup restore <快照名> [--all] 从快照恢复数据\n  /backup prune [保留数]   清理旧快照\n  /backup remote-prune <快照名>   删除远端快照\n  /backup sweep-archives   清理失效的会话归档` }
+      return { kind: 'error', text: `未知子命令：${sub}\n用法：\n  /backup [快照名]        创建快照（默认时间戳名，也可自定义）\n  /backup list             列出本地与远端快照\n  /backup push <快照名>    推送本地快照到远端\n  /backup pull <快照名> [--force]  从远端同步快照\n  /backup restore <快照名> [--all] 从快照恢复数据\n  /backup prune [保留数]   清理旧快照\n  /backup remote-prune <快照名>   删除远端快照\n  /backup sweep-archives   清理失效的会话归档` }
     } catch (error) {
       return { kind: 'error', text: userFacing(error) }
     }
