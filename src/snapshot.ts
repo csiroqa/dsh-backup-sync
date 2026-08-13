@@ -16,11 +16,12 @@ import { basename, dirname, join, resolve, sep } from 'node:path'
 
 export const FORMAT_VERSION = 1
 
-/** 快照内单个文件的相对路径与大小。 */
+/** 快照内单个文件的相对路径、大小与快照时刻的修改时间（增量对比依据）。 */
 export interface SnapshotFile {
   /** 相对快照根的路径（正斜杠分隔）。 */
   readonly path: string
   readonly size: number
+  readonly mtimeMs: number
 }
 
 export interface SnapshotMeta {
@@ -110,7 +111,7 @@ async function collectFiles(root: string, rel = '', warnings: string[] = []): Pr
     } else if (entry.isFile()) {
       try {
         const s = await stat(join(root, relPath))
-        files.push({ path: relPath, size: s.size })
+        files.push({ path: relPath, size: s.size, mtimeMs: s.mtimeMs })
       } catch (error) {
         warnings.push(`跳过 ${relPath}（文件在收集时消失）：${errorMessage(error)}`)
       }
@@ -185,7 +186,7 @@ export async function createSnapshot(
         rel: 'credentials',
         source: credentialsSrc,
         dest: join(dir, 'credentials', '.credentials.yaml'),
-        files: [{ path: 'credentials/.credentials.yaml', size: s.size }],
+        files: [{ path: 'credentials/.credentials.yaml', size: s.size, mtimeMs: s.mtimeMs }],
       })
     }
   }
@@ -195,7 +196,7 @@ export async function createSnapshot(
     const src = join(dshHome, rel)
     if (existsSync(src)) {
       const s = await stat(src)
-      configs.push({ path: rel, size: s.size })
+      configs.push({ path: rel, size: s.size, mtimeMs: s.mtimeMs })
     }
   }
   const profilesSrc = join(dshHome, 'profiles')
@@ -209,6 +210,7 @@ export async function createSnapshot(
       configs.push({
         path: `profiles/${profile.name}/cordis.patch.yml`,
         size: s.size,
+        mtimeMs: s.mtimeMs,
       })
     }
   }
@@ -226,7 +228,7 @@ export async function createSnapshot(
       await mkdir(dirname(dest), { recursive: true })
       try {
         await cp(join(dshHome, config.path), dest, { force: true, dereference: true })
-        files.push({ path: `configs/${config.path}`, size: config.size })
+        files.push({ path: `configs/${config.path}`, size: config.size, mtimeMs: config.mtimeMs })
       } catch (error) {
         warnings.push(`配置复制失败 ${config.path}：${errorMessage(error)}`)
       }

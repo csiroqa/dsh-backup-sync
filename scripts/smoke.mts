@@ -1,9 +1,10 @@
 /**
  * backup-sync 核心逻辑冒烟测试（本地快照 + WebDAV 远端，纯逻辑、不依赖 dsh 实例）。
  *
- * 运行：pnpm run smoke
+ * 运行（在 harness 仓库目录，tsx 由其 node_modules 提供）：
+ *   node --import tsx/esm ../dsh-plugin/scripts/smoke-backup.mts
  */
-import { mkdir, writeFile, readFile, rm, mkdtemp, readdir } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, rm, mkdtemp, readdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,8 +13,12 @@ import {
   createSnapshot, restoreSnapshot, listSnapshots, pruneSnapshots, snapshotDir, safeJoin,
 } from '../src/snapshot.js'
 import {
-  pushSnapshot, pullSnapshot, listRemoteSnapshots, removeRemoteSnapshot, peekRemoteSnapshot,
+  pushSnapshot, pullSnapshot, listRemoteSnapshots, listRemoteFiles, removeRemoteSnapshot, peekRemoteSnapshot,
 } from '../src/webdav.js'
+
+/** 测试夹具：DSH_HOME 下的会话日志相对路径（正斜杠，与快照内路径约定一致）与内容。 */
+const SESSION_REL = 'sessions/proj--a--/sess-1/session.jsonl.zstd'
+const SNAPSHOT_BODY = 'fake-log-1\n'
 
 let passed = 0
 let failed = 0
@@ -76,9 +81,12 @@ function createWebDavMock(failPut?: string): Server {
       for (const key of kids) {
         const rest = key.slice(prefix.length)
         const top = rest.split('/')[0]
-        if (top !== '') hrefs.add(`${prefix}${top}/`)
+        if (top === '') continue
+        // 深层路径聚合出的中间目录带尾斜杠，与真实 WebDAV 的目录 href 一致。
+        const isDir = key.endsWith('/') || rest.includes('/')
+        hrefs.add(`${prefix}${top}${isDir ? '/' : ''}`)
       }
-      const xml = `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>${prefix}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>${[...hrefs].map((href) => `<d:response><d:href>${href}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`).join('')}</d:multistatus>`
+      const xml = `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>${prefix}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>${[...hrefs].map((href) => `<d:response><d:href>${href}</d:href><d:propstat><d:prop><d:resourcetype>${href.endsWith('/') ? '<d:collection/>' : ''}</d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>`).join('')}</d:multistatus>`
       respond(207, xml, 'application/xml')
       return
     }
@@ -104,10 +112,10 @@ async function main(): Promise<void> {
   const temp = await mkdtemp(join(tmpdir(), 'dsh-backup-smoke-'))
   const home = join(temp, 'dsh-home')
   const backupRoot = join(temp, 'backups')
-  const sessionDir = join(home, 'sessions', 'proj--a--', 'sess-1')
+  const sessionDir = join(home, ...SESSION_REL.split('/').slice(0, -1))
   await mkdir(sessionDir, { recursive: true })
   await mkdir(join(home, 'storages'), { recursive: true })
-  await writeFile(join(sessionDir, 'session.jsonl.zstd'), 'fake-log-1\n')
+  await writeFile(join(sessionDir, 'session.jsonl.zstd'), SNAPSHOT_BODY)
   await writeFile(join(home, 'storages', 'workspace.json'), '{"workspaces":[]}')
   await writeFile(join(home, 'settings.yaml'), 'telemetry: false\n')
   await writeFile(join(home, 'cordis.patch.yml'), '- insert:\n')
@@ -119,7 +127,7 @@ async function main(): Promise<void> {
   })
   check('createSnapshot 返回 meta', meta.name === name)
   check('createSnapshot 无警告', warnings.length === 0, warnings.join('; '))
-  check('快照目录含 sessions 文件', existsSync(join(snapshotDir(backupRoot, name), 'sessions', 'proj--a--', 'sess-1', 'session.jsonl.zstd')))
+  check('快照目录含 sessions 文件', existsSync(join(snapshotDir(backupRoot, name), SESSION_REL)))
   check('快照目录含 storages', existsSync(join(snapshotDir(backupRoot, name), 'storages', 'workspace.json')))
   check('快照目录含 configs', existsSync(join(snapshotDir(backupRoot, name), 'configs', 'settings.yaml')))
   check('快照目录含 meta.json', existsSync(join(snapshotDir(backupRoot, name), 'meta.json')))
@@ -151,7 +159,7 @@ async function main(): Promise<void> {
   const restored = await restoreSnapshot(backupRoot, home, name, { all: false, safeguard: true })
   check('restore 恢复 sessions+storages', restored.restored.length === 2, restored.restored.join(','))
   check('restore 保险快照已建', restored.safeguardName !== undefined && existsSync(snapshotDir(backupRoot, restored.safeguardName!)))
-  check('sessions 文件内容还原', (await readFile(join(sessionDir, 'session.jsonl.zstd'), 'utf8')) === 'fake-log-1\n')
+  check('sessions 文件内容还原', (await readFile(join(sessionDir, 'session.jsonl.zstd'), 'utf8')) === SNAPSHOT_BODY)
   check('storages 文件还原', (await readFile(join(home, 'storages', 'workspace.json'), 'utf8')) === '{"workspaces":[]}')
   check('settings.yaml 未被 --all 前覆盖', (await readFile(join(home, 'settings.yaml'), 'utf8')).includes('telemetry'))
 
@@ -200,11 +208,26 @@ async function main(): Promise<void> {
   mock = createWebDavMock()
   port = await listen(mock)
   remote.baseUrl = `http://127.0.0.1:${port}/dav/user/backups`
-  const uploaded = await pushSnapshot(remote, 'remote-1', meta2, snapshotDir(backupRoot, 'remote-1'))
-  check('push 上传全部文件', uploaded === meta2.files.length, `got ${uploaded}`)
+  const firstPush = await pushSnapshot(remote, 'remote-1', meta2, snapshotDir(backupRoot, 'remote-1'))
+  check('push 上传全部文件', firstPush.uploaded === meta2.files.length && firstPush.skipped === 0, JSON.stringify(firstPush))
+
+  const secondPush = await pushSnapshot(remote, 'remote-1', meta2, snapshotDir(backupRoot, 'remote-1'))
+  check('push 二次全跳过（增量）', secondPush.uploaded === 0 && secondPush.skipped === meta2.files.length, JSON.stringify(secondPush))
 
   const remoteList = await listRemoteSnapshots(remote)
   check('listRemoteSnapshots 含 remote-1', remoteList.includes('remote-1'), remoteList.join(','))
+
+  console.log('== push 清理远端残留 ==')
+  // 模拟旧版本快照：远端存在旧清单（含一个已废弃文件）与对应的残留文件。
+  const base = `http://127.0.0.1:${port}/dav/user/backups/dsh-backup/remote-1`
+  const oldMeta = { ...meta2, files: [...meta2.files, { path: 'old-stale.bin', size: 5, mtimeMs: 1 }] }
+  await fetch(`${base}/old-stale.bin`, { method: 'PUT', body: 'stale' })
+  await fetch(`${base}/meta.json`, { method: 'PUT', body: JSON.stringify(oldMeta) })
+  const staleRemote = await listRemoteFiles(remote, 'remote-1')
+  check('远端存在残留文件', staleRemote.includes('old-stale.bin'), staleRemote.join(','))
+  const thirdPush = await pushSnapshot(remote, 'remote-1', meta2, snapshotDir(backupRoot, 'remote-1'))
+  check('push 清理远端残留', thirdPush.removed === 1 && thirdPush.uploaded === 0, JSON.stringify(thirdPush))
+  check('远端残留已删除', !(await listRemoteFiles(remote, 'remote-1')).includes('old-stale.bin'))
   mock.close()
 
   console.log('== push 中途失败（meta 后置） ==')
@@ -222,27 +245,27 @@ async function main(): Promise<void> {
   check('失败后远端无 meta（pull 视为不存在）', peekBroken === undefined)
   mock.close()
 
-  console.log('== pull 与 --force ==')
+  console.log('== pull 增量与 --force ==')
   mock = createWebDavMock()
   port = await listen(mock)
   remote.baseUrl = `http://127.0.0.1:${port}/dav/user/backups`
   await pushSnapshot(remote, 'remote-1', meta2, snapshotDir(backupRoot, 'remote-1'))
   const pulled = await pullSnapshot(remote, 'remote-1', snapshotDir(backupRoot, 'remote-1-pulled'))
-  check('pull 拉取文件数一致', pulled.files.length === meta2.files.length)
-  check('pull 内容一致', (await readFile(join(snapshotDir(backupRoot, 'remote-1-pulled'), 'sessions', 'proj--a--', 'sess-1', 'session.jsonl.zstd'), 'utf8')) === 'fake-log-1\n')
+  check('pull 拉取文件数一致', pulled.meta.files.length === meta2.files.length && pulled.downloaded === meta2.files.length, JSON.stringify(pulled))
+  const sessionFile = meta2.files.find((f) => f.path.endsWith('session.jsonl.zstd'))
+  check('pull 内容一致', (await readFile(join(snapshotDir(backupRoot, 'remote-1-pulled'), SESSION_REL), 'utf8')) === SNAPSHOT_BODY)
+  const pulledMtime = (await stat(join(snapshotDir(backupRoot, 'remote-1-pulled'), sessionFile!.path))).mtimeMs
+  check('pull 恢复 mtime（容差 2ms）', sessionFile !== undefined && Math.abs(pulledMtime - sessionFile.mtimeMs) < 2, `got ${pulledMtime} vs ${sessionFile?.mtimeMs}`)
 
-  let forceRejected = false
-  try {
-    await pullSnapshot(remote, 'remote-1', snapshotDir(backupRoot, 'remote-1-pulled'))
-  } catch {
-    forceRejected = true
-  }
-  check('pull 同名不覆盖（需 --force）', forceRejected)
+  const secondPull = await pullSnapshot(remote, 'remote-1', snapshotDir(backupRoot, 'remote-1-pulled'))
+  check('pull 二次全跳过（增量）', secondPull.downloaded === 0, JSON.stringify(secondPull))
 
-  const staleFile = join(snapshotDir(backupRoot, 'remote-1-pulled'), 'stale-extra.txt')
-  await writeFile(staleFile, 'old leftover')
+  const staleLocal = join(snapshotDir(backupRoot, 'remote-1-pulled'), 'stale-extra.txt')
+  await writeFile(staleLocal, 'old leftover')
+  const thirdPull = await pullSnapshot(remote, 'remote-1', snapshotDir(backupRoot, 'remote-1-pulled'))
+  check('pull 清理本地残留', thirdPull.removed >= 1 && !existsSync(staleLocal), JSON.stringify(thirdPull))
+
   await pullSnapshot(remote, 'remote-1', snapshotDir(backupRoot, 'remote-1-pulled'), undefined, true)
-  check('pull --force 清理残留文件', !existsSync(staleFile))
   check('pull --force 内容完整', existsSync(join(snapshotDir(backupRoot, 'remote-1-pulled'), 'meta.json')))
 
   await removeRemoteSnapshot(remote, 'remote-1')

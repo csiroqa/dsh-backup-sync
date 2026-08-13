@@ -8,7 +8,7 @@ DeepSeek Harness（`dsh`）备份/恢复 + 跨机同步插件：本地快照、W
 |---|---|---|
 | 创建/列出/清理本地快照 | 已实测 | 真实 dsh 运行（快照落盘、内容核对）+ 冒烟测试 |
 | 自动备份与保留策略 | 已实测 | 真实 dsh 运行（按间隔自动落盘） |
-| WebDAV 推送/拉取/删除 | 已实现 | 协议级 mock 验证（push 中途失败、meta 后置、force 清理、路径逃逸等） |
+| WebDAV 推送/拉取/删除 | 已实现 | 协议级 mock 验证（增量跳过、meta 后置、远端/本地残留清理、mtime 恢复、force 全量、路径逃逸等） |
 | 恢复（默认与 `--all`） | 已实现 | 冒烟测试覆盖；**未在运行中的 dsh 实例上实测** |
 | 真实 WebDAV 服务器 | 未验证 | 未连接 Nextcloud/坚果云等真实服务器，协议细节（MKCOL/PROPFIND 差异）可能需按服务器微调 |
 
@@ -20,7 +20,9 @@ DeepSeek Harness（`dsh`）备份/恢复 + 跨机同步插件：本地快照、W
   - 配置层（`settings.yaml`、`cordis.patch.yml`、各 profile 用户层，仅 `restore --all` 还原）
   - 可选附件（`attachments/`，体积大，默认关闭）
 - **跨机同步**：通过 WebDAV（Nextcloud / 坚果云 / 群晖 / S3 网关等）推送与拉取快照
+  - **增量传输**：push/pull 按清单对比（size + mtime），未变化的文件跳过；拉取后恢复文件 mtime，二次同步零下载
   - push 的清单（`meta.json`）最后上传：中途失败不会被另一台机器当成完整快照
+  - 推送自动清理远端旧清单残留；拉取自动清理本地多余文件
 - **恢复**：默认只还原会话日志与工作区数据；`--all` 连配置一起还原（恢复前自动对现状建保险快照）
 - **自动备份**：按分钟间隔定时快照，并按保留策略自动清理旧快照
 
@@ -74,11 +76,12 @@ npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh web --port 0
 |---|---|
 | `/backup [快照名]` | 创建本地快照（默认时间戳名） |
 | `/backup list` | 列出本地与远端快照 |
-| `/backup push <快照名>` | 推送本地快照到远端（覆盖远端同名） |
-| `/backup pull <快照名> [--force]` | 从远端拉取快照到本地（不自动恢复） |
+| `/backup push <快照名>` | 推送本地快照到远端（增量：未变化文件跳过，并清理远端残留） |
+| `/backup pull <快照名> [--force]` | 从远端同步快照到本地（增量；`--force` 清空后全量重拉） |
 | `/backup restore <快照名> [--all]` | 从本地快照恢复；`--all` 连配置一起还原（需重启生效） |
 | `/backup prune [保留数]` | 清理旧本地快照（默认按配置 `autoKeep`） |
 | `/backup remote-prune <快照名>` | 删除远端快照 |
+| `/backup sweep-archives` | 清理失效的会话归档（见"恢复安全"） |
 
 ## 配置（cordis.patch.yml）
 
@@ -117,6 +120,7 @@ dsh credential set WEBDAV_PASSWORD ...
 - `restore` 前自动对现状建保险快照（`…-pre-restore`），可随时回退
 - 默认**不**覆盖运行中配置；`--all` 会还原 `settings.yaml` 与各 profile 的 `cordis.patch.yml`，其他插件配置将回退为快照时刻的状态，需重启生效
 - 建议在 dsh 空闲时执行恢复；会话日志正被占用时相关文件会跳过并在输出中警告
+- **失效归档**：dsh 的归档列表（侧栏"已归档"）只记录会话 id、不校验日志是否存在——恢复覆盖或删除会话日志后，归档条目不会自动消失（幽灵归档）。本插件在 `restore` 成功后自动清理，也可随时用 `/backup sweep-archives` 手动清理；旧版 dsh（不含 `workspace.unarchiveSession`）会提示不支持
 
 ## 已知限制
 
@@ -134,7 +138,7 @@ dsh credential set WEBDAV_PASSWORD ...
 pnpm run build      # tsdown 构建 lib/index.js（host ESM）+ lib/client.js（browser CJS 包装）
 pnpm run watch      # tsdown --watch
 pnpm run typecheck  # tsc --noEmit
-pnpm run smoke      # 35 项核心逻辑冒烟测试（本地快照 + WebDAV mock，零外部服务）
+pnpm run smoke      # 核心逻辑冒烟测试（本地快照 + WebDAV mock，零外部服务）
 ```
 
 ## 许可证

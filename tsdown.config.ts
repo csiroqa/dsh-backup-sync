@@ -1,4 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { defineConfig } from 'tsdown'
+
+/** 从 package.json 读取包名（browser 半区模块注册 id，避免硬编码漂移）。 */
+const pkg = JSON.parse(readFileSync(join(import.meta.dirname, 'package.json'), 'utf8')) as { name: string }
 
 /**
  * 构建配置：工具链对齐 harness 内置插件（如 @deepseek-ai/dsh-schedule）：
@@ -44,7 +49,7 @@ export default defineConfig([
     // harness 约定 browser 半区产物为 client.js（CJS 包装），fixedExtension: false 会输出 .cjs，需覆盖。
     outExtensions: () => ({ js: '.js' }),
     banner: {
-      js: 'window.__ModuleLoader__.load({ id: "@dsh-plugin/backup-sync", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
+      js: `window.__ModuleLoader__.load({ id: ${JSON.stringify(pkg.name)}, factory: (require) => { var module = { exports: {} }; var exports = module.exports;`,
     },
     footer: {
       js: 'return module.exports; } });',

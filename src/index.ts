@@ -17,6 +17,9 @@
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-workspace'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import type {} from '@deepseek-ai/dsh-session'
 // timer 插件的类型增补（ctx.interval）依赖此导入生效。
 import type {} from '@deepseek-ai/cordis-plugin-timer'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
@@ -31,10 +34,11 @@ import {
   pushSnapshot, pullSnapshot, listRemoteSnapshots, removeRemoteSnapshot,
   WebDavError, type WebDavConfig,
 } from './webdav.js'
+import type { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 
 export const name = 'backup-sync'
 
-export const inject = ['commands', 'credentials', 'timer']
+export const inject = ['commands', 'credentials', 'timer', 'workspaceRegistry', 'sessionPersistence', 'sessions']
 
 /** WebDAV 远端配置。username/password 留空时从凭据引用 WEBDAV_USERNAME / WEBDAV_PASSWORD 解析。 */
 export interface RemoteConfig {
@@ -141,6 +145,43 @@ export function apply(ctx: Context, config: Config = {}): void {
     return lines.join('\n')
   }
 
+  /**
+   * 清理失效归档：归档列表（archivedSessionIds）不校验会话日志是否存在，
+   * 会话日志被删除/恢复覆盖后会产生"幽灵归档"。逐个校验，缺失则取消归档。
+   * 返回清理数量；任何会话存在性校验失败都保守跳过（不误删）。
+   */
+  const sweepArchives = async (): Promise<number> => {
+    const archived = [...ctx.workspaceRegistry.archivedSessionIds]
+    if (archived.length === 0) return 0
+    // 旧版 dsh（如 npm 0.1.0-rc.x）的 registry 没有 unarchiveSession，跳过并提示。
+    const registry = ctx.workspaceRegistry as WorkspaceRegistry & { unarchiveSession?(sessionId: string): Promise<void> }
+    if (typeof registry.unarchiveSession !== 'function') {
+      throw new Error('当前 dsh 版本不支持取消归档（需要含 workspace.unarchiveSession 的版本）')
+    }
+    let known: Set<string> | undefined
+    let removed = 0
+    for (const id of archived) {
+      let exists = ctx.sessions.get(id) !== undefined
+      if (!exists) {
+        if (known === undefined) {
+          try {
+            const headers = await ctx.sessionPersistence.list()
+            known = new Set(headers.map((header) => header.id))
+          } catch (error) {
+            ctx.logger.warn('backup-sync: 校验归档会话失败，跳过：%s', errorMessage(error))
+            return 0
+          }
+        }
+        exists = known.has(id)
+      }
+      if (!exists) {
+        await registry.unarchiveSession(id)
+        removed += 1
+      }
+    }
+    return removed
+  }
+
   const command = async (invocation: CommandInvocation): Promise<{ kind: 'success'; text: string } | { kind: 'error'; text: string }> => {
     try {
       const args = tokens(invocation.rawInput)
@@ -184,8 +225,11 @@ export function apply(ctx: Context, config: Config = {}): void {
         const meta = await getSnapshot(backupRoot, name)
         if (meta === undefined) return { kind: 'error', text: `本地快照不存在：${name}（可用 /backup list 查看）` }
         const config = await remoteAuth()
-        const uploaded = await pushSnapshot(config, name, meta, snapshotDir(backupRoot, name), signal)
-        return { kind: 'success', text: `已推送快照 ${name}（${uploaded} 文件）到远端` }
+        const { uploaded, skipped, removed } = await pushSnapshot(config, name, meta, snapshotDir(backupRoot, name), signal)
+        const parts = [`已推送快照 ${name} 到远端：${uploaded} 文件上传`]
+        if (skipped > 0) parts.push(`${skipped} 文件跳过（未变化）`)
+        if (removed > 0) parts.push(`清理远端残留 ${removed} 个`)
+        return { kind: 'success', text: parts.join('，') }
       }
 
       if (sub === 'pull') {
@@ -194,9 +238,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         assertSnapshotName(name)
         const force = args.includes('--force')
         const config = await remoteAuth()
-        const meta = await pullSnapshot(config, name, snapshotDir(backupRoot, name), signal, force)
+        const { meta, downloaded, removed } = await pullSnapshot(config, name, snapshotDir(backupRoot, name), signal, force)
         const lines = [
-          `已拉取快照 ${name}（${meta.files.length} 文件 / ${formatBytes(totalBytes(meta.files))}）`,
+          `已同步快照 ${name}：${downloaded} 文件下载 / ${removed} 文件清理（共 ${meta.files.length} 文件 / ${formatBytes(totalBytes(meta.files))}）`,
           `  位置：${snapshotDir(backupRoot, name)}`,
           '下一步：/backup restore <快照名> 恢复数据',
         ]
@@ -222,7 +266,22 @@ export function apply(ctx: Context, config: Config = {}): void {
         if (all) {
           lines.push('配置层已还原（设置与各 profile 配置将回退为快照时的状态），请重启 dsh 生效')
         }
+        // 会话日志可能被恢复覆盖而归档列表未同步，自动清理失效归档。
+        try {
+          const swept = await sweepArchives()
+          if (swept > 0) lines.push(`已清理 ${swept} 个失效归档（会话日志已不存在）`)
+        } catch (error) {
+          lines.push(`  警告：清理失效归档失败（${errorMessage(error)}）`)
+        }
         return { kind: 'success', text: lines.join('\n') }
+      }
+
+      if (sub === 'sweep-archives') {
+        const swept = await sweepArchives()
+        const total = ctx.workspaceRegistry.archivedSessionIds.length
+        return { kind: 'success', text: swept === 0
+          ? `归档列表正常（${total} 个会话，无失效条目）`
+          : `已清理 ${swept} 个失效归档（剩余 ${total} 个）` }
       }
 
       if (sub === 'prune') {
@@ -247,7 +306,7 @@ export function apply(ctx: Context, config: Config = {}): void {
         return { kind: 'success', text: `已删除远端快照：${name}` }
       }
 
-      return { kind: 'error', text: `未知子命令：${sub}\n用法：\n  /backup [name]           创建快照\n  /backup list             列出本地与远端快照\n  /backup push <快照名>    推送本地快照到远端\n  /backup pull <快照名> [--force]  从远端拉取快照\n  /backup restore <快照名> [--all] 从快照恢复数据\n  /backup prune [保留数]   清理旧快照\n  /backup remote-prune <快照名>   删除远端快照` }
+      return { kind: 'error', text: `未知子命令：${sub}\n用法：\n  /backup [name]           创建快照\n  /backup list             列出本地与远端快照\n  /backup push <快照名>    推送本地快照到远端\n  /backup pull <快照名> [--force]  从远端同步快照\n  /backup restore <快照名> [--all] 从快照恢复数据\n  /backup prune [保留数]   清理旧快照\n  /backup remote-prune <快照名>   删除远端快照\n  /backup sweep-archives   清理失效的会话归档` }
     } catch (error) {
       return { kind: 'error', text: userFacing(error) }
     }
@@ -272,7 +331,7 @@ export function apply(ctx: Context, config: Config = {}): void {
   ctx.effect(() => ctx.commands.register({
     name: 'backup',
     description: '备份/恢复与跨机同步：创建本地快照、WebDAV 推送拉取、恢复与保留清理',
-    input: { hint: '[<快照名>|list|push <快照名>|pull <快照名> [--force]|restore <快照名> [--all]|prune [保留数]]' },
+    input: { hint: '[<快照名>|list|push <快照名>|pull <快照名> [--force]|restore <快照名> [--all]|prune [保留数]|sweep-archives]' },
     handler: command,
   }), 'backup-sync: /backup')
 
