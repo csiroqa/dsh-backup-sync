@@ -27,6 +27,7 @@ DeepSeek Harness（`dsh`）备份/恢复 + 跨机同步插件：本地快照、W
 ## 快速上手
 
 ```sh
+# 源码版：pnpm dsh web；npx 版：npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh web --port 0
 pnpm dsh web
 # 对话中：
 /backup              # 创建第一个快照
@@ -45,6 +46,8 @@ pnpm dsh web
 
 ## 安装
 
+### 通过源码仓库（开发环境）
+
 ```sh
 pnpm install
 pnpm run build
@@ -53,6 +56,17 @@ pnpm run build
 pnpm dsh plugin --profile web add ../path/to/backup-sync
 pnpm dsh web
 ```
+
+### 通过 npx（已实测）
+
+```sh
+# 首次运行需联网下载 @deepseek-ai/dsh（npm 包形式，非源码仓库）
+npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh plugin --profile web add <本插件路径>
+npx --registry=https://registry.npmjs.org -y @deepseek-ai/dsh web --port 0
+```
+
+- 若本机 npm 配置了 npmmirror 等镜像，**必须显式 `--registry=https://registry.npmjs.org`**：镜像上 `@deepseek-ai/dsh` 数据滞后（可能解析到旧版本且缺依赖），且 npm 11 的 npx 锁校验会拒绝非官方 registry
+- npx 版与源码版共享 `$DSH_HOME` 与 profile；插件的 `link:` 依赖指向本地 harness 源码，需保持该路径存在且已 `pnpm run build`
 
 ## 命令
 
