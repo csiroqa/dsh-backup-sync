@@ -128,9 +128,11 @@ dsh credential set WEBDAV_PASSWORD ...
 
 ## 开发
 
+构建工具链与 harness 内置插件（如 `@deepseek-ai/dsh-schedule`）对齐：**tsdown**（rolldown 驱动），配置见 `tsdown.config.ts`；依赖 external 遵循 tsdown 默认（按 `package.json` 的 `dependencies` 排除）。
+
 ```sh
-pnpm run build      # esbuild 构建 lib/index.js + lib/client.js
-pnpm run watch      # 监听 src/ 自动重编
+pnpm run build      # tsdown 构建 lib/index.js（host ESM）+ lib/client.js（browser CJS 包装）
+pnpm run watch      # tsdown --watch
 pnpm run typecheck  # tsc --noEmit
 pnpm run smoke      # 35 项核心逻辑冒烟测试（本地快照 + WebDAV mock，零外部服务）
 ```
