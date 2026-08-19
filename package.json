@@ -32,7 +32,8 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "watch": "tsdown --watch",
-    "smoke": "node --experimental-strip-types scripts/smoke.mts"
+    "smoke": "node --experimental-strip-types scripts/smoke.mts",
+    "test": "node --experimental-strip-types scripts/smoke.mts"
   },
   "keywords": [
     "dsh",
