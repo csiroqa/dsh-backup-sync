@@ -6,12 +6,28 @@ import { defineConfig } from 'tsdown'
 const pkg = JSON.parse(readFileSync(join(import.meta.dirname, 'package.json'), 'utf8')) as { name: string }
 
 /**
- * 构建配置：`fixedExtension: false`、`dts: false`、`clean: false`，
- * 依赖 external 遵循 tsdown 默认（按 package.json 的 dependencies 排除）。
- *   - lib/index.js   host 半区（Node ESM；@deepseek-ai/* 已在 dependencies，自动保持 external）
+ * 构建配置：`fixedExtension: false`、`dts: false`、`clean: false`。
+ * 依赖 external 遵循 tsdown 默认（按 package.json 的 dependencies 排除），但——
+ * 本插件的 @deepseek-ai/* 共享宿主包不在 dependencies（它们在 peerDependencies，
+ * 运行时由 DSH 宿主注入，见 package.json）。为保证绝不内联进产物，host 半区
+ * 显式声明为 neverBundle（与 browser 半区同理）。这与"宿主注入"语义一致：
+ *   - lib/index.js   host 半区（Node ESM；@deepseek-ai/* 显式 external，宿主注入）
  *   - lib/client.js  browser 半区（CJS + window.__ModuleLoader__.load 包装；平台模块
- *                     不在 dependencies，需显式 external，其余全部内联）
+ *                     亦在 CLIENT_EXTERNALS，全部 external，其余内联）
  */
+
+/** Host 半区：由 DSH 宿主注入的共享宿主包（= peerDependencies），必须保持 external，禁止内联。 */
+const HOST_EXTERNALS = [
+  '@deepseek-ai/cordis',
+  '@deepseek-ai/cordis-plugin-timer',
+  '@deepseek-ai/dsh-client-runtime',
+  '@deepseek-ai/dsh-commands',
+  '@deepseek-ai/dsh-credentials',
+  '@deepseek-ai/dsh-home-paths',
+  '@deepseek-ai/dsh-session',
+  '@deepseek-ai/dsh-session-persistence',
+  '@deepseek-ai/dsh-workspace',
+]
 
 /** 浏览器平台模块表（platform seed + 文档化的 runtime 例外），必须保持 external。 */
 const CLIENT_EXTERNALS = [
@@ -34,6 +50,7 @@ export default defineConfig([
     fixedExtension: false,
     dts: false,
     clean: false,
+    deps: { neverBundle: HOST_EXTERNALS },
   },
   {
     entry: { client: 'src/client/index.ts' },

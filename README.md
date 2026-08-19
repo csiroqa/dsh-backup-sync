@@ -46,7 +46,7 @@ English: [README.en.md](README.en.md)
 
 ## 安装
 
-前置：Node.js >= 22、pnpm、本机 `deepseek-harness` 源码检出（依赖以 `link:` 指向其 `@deepseek-ai/*` 包，未发布到 npm）。
+前置：Node.js >= 22、pnpm。依赖全部取自 npm registry（`peerDependencies` + `devDependencies`，无 `link:` 机器路径），克隆到任意路径即可安装。
 
 ```sh
 git clone https://github.com/csiroqa/dsh-backup-sync.git
@@ -70,11 +70,24 @@ dsh plugin --profile web add link:E:\path\to\dsh-backup-sync   # Windows
 3. `/backup restore <快照名> [--all]` 恢复：默认只还原会话日志与工作区数据（恢复前自动留保险快照）；`--all` 连配置一起还原（需重启生效）
 4. `/backup sweep-archives` 清理失效归档；`/backup prune 5` 只保留最近 5 个
 
+## 开发与测试
+
+```sh
+pnpm install          # 依赖取自 npm registry（可移植，无 link: 机器路径）
+pnpm run typecheck    # tsc --noEmit 类型检查
+pnpm run build        # tsdown 双半区构建（lib/index.js + lib/client.js）
+pnpm test             # 冒烟/集成测试别名（= pnpm smoke，40 项：本地快照 + 假 WebDAV 服务端）
+```
+
+- **依赖约定**：`@deepseek-ai/*` 共享宿主包在 `peerDependencies`（运行时由 DSH 宿主注入）与 `devDependencies`（本地编译期解析，semver 范围）各声明一份；`tsdown.config.ts` 中 host 半区用 `deps.neverBundle` 显式保持这些包 external，禁止内联进 `lib/index.js`。
+- **CI**：GitHub Actions 三平台（Linux/macOS/Windows）跑 `pnpm install --frozen-lockfile` → `typecheck` → `build` → `smoke`。
+- **browser 半区边界**：`lib/client.js` 依赖 DSH Web 宿主的 `window.__ModuleLoader__` 运行环境，不可在纯 Node 中直接运行；客户端仅引用平台模块（`react` 等）。
+
 ## 兼容性
 
 - **平台**：Windows / macOS / Linux（Node >= 22）—— 构建与冒烟测试经 [GitHub Actions CI](https://github.com/csiroqa/dsh-backup-sync/actions) 验证
 - **凭据**：通过 DSH 凭据引用（`WEBDAV_USERNAME` / `WEBDAV_PASSWORD`，存于 `$DSH_HOME/.credentials.yaml`），不落配置库
-- 针对 DSH `0.1.0-rc.6`（源码检出与 npm/npx 安装）实测可用
+- 针对 DSH `0.1.0-rc.7`（npm 安装）实测可用；`@deepseek-ai/*` 以 `peerDependencies` 声明，运行时由宿主注入同源包（不携带独立副本）
 - 客户端仅依赖平台模块表（react 等），不随 DSH SDK 版本漂移
 - 构建产物：`tsdown`（host 半区 `lib/index.js` + browser 半区 `lib/client.js`，标准 `window.__ModuleLoader__.load` 闭包工厂格式）
 

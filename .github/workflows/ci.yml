@@ -25,18 +25,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
 
-      # 依赖以 link: 指向兄弟目录的 deepseek-harness 检出（与本地开发环境一致）。
-      - name: Checkout deepseek-harness (sibling)
-        run: git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness ../../../deepseek-harness
+      # 依赖已全部改为 registry semver（peerDependencies/devDependencies），
+      # 不由 link: 指向兄弟目录的 deepseek-harness，无需再 checkout + build。
 
-      - name: Build harness libraries (host + client halves)
-        working-directory: ../../../deepseek-harness
-        run: |
-          pnpm install
-          pnpm run build:lib
-
-      - name: Install plugin dependencies
-        run: pnpm install
+      - name: Install plugin dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         run: pnpm typecheck
