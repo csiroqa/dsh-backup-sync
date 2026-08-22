@@ -62,15 +62,15 @@
     "tsdown": "^0.22.14",
     "typescript": "^5.9.0"
   },
-  "dependencies": {
-    "@deepseek-ai/cordis": "link:../../../deepseek-harness/vendor/cordis",
-    "@deepseek-ai/cordis-plugin-timer": "link:../../../deepseek-harness/vendor/timer",
-    "@deepseek-ai/dsh-client-runtime": "link:../../../deepseek-harness/packages/client/runtime",
-    "@deepseek-ai/dsh-commands": "link:../../../deepseek-harness/packages/interaction/commands",
-    "@deepseek-ai/dsh-credentials": "link:../../../deepseek-harness/packages/credentials/credentials",
-    "@deepseek-ai/dsh-home-paths": "link:../../../deepseek-harness/packages/util/home-paths",
-    "@deepseek-ai/dsh-session": "link:../../../deepseek-harness/packages/core/session",
-    "@deepseek-ai/dsh-session-persistence": "link:../../../deepseek-harness/packages/session/session-persistence",
-    "@deepseek-ai/dsh-workspace": "link:../../../deepseek-harness/packages/workspace/workspace"
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/cordis-plugin-timer": "*",
+    "@deepseek-ai/dsh-client-runtime": "*",
+    "@deepseek-ai/dsh-commands": "*",
+    "@deepseek-ai/dsh-credentials": "*",
+    "@deepseek-ai/dsh-home-paths": "*",
+    "@deepseek-ai/dsh-session": "*",
+    "@deepseek-ai/dsh-session-persistence": "*",
+    "@deepseek-ai/dsh-workspace": "*"
   }
 }
